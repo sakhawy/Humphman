@@ -1,10 +1,11 @@
 ; load the external glibc functions
-extern exit, malloc, free, fopen, fclose, fread, fwrite
+extern exit, malloc, free, fopen, fclose, fread, fwrite, memset
 
 section .bss
 buffer resb 1024
 
 section .data
+text: db "wabba labba dub dub", 0
 input: db "in.bin", 0
 output: db "out.bin", 0
 read_mode: db "r", 0
@@ -464,19 +465,170 @@ write_file:
     leave
     ret
 
+
+calculate_frequency:
+    push    rbp
+    mov     rbp, rsp
+
+    ; [rbp+16] = char*
+    ; initialize a new array (freq_arr)
+    ; loop through text
+    ; add 1 to the freq_arr
+        ; loop through freq_arr
+        ; if current item in freq_arr == current item in text
+        ; add 1 to freq_arr[i+8]
+    ; return freq_arr 
+
+    sub     rsp, 32
+
+    ; initialize a new array (freq_arr)
+    ; 256 * 16 bytes    (assuming 256 unique characters)
+    mov     rdi, 256
+    shl     rdi, 4
+    call    malloc
+    mov     [rbp-8], rax        ; freq_arr
+
+    mov rdi, rax ; pass the address of the memory region as the first argument
+    xor al, al ; set the value to zero
+    mov rcx, 256 ; specify the size of the memory region
+    call memset
+
+    ; loop through text
+    mov     qword [rbp-16], 0   ; i = 0 > text
+    mov     qword [rbp-24], 0   ; j = 0 > freq_arr
+    mov     qword [rbp-32], 0   ; next_empty_in_freq_arr = 0 
+
+    .loop_text:
+        mov     rcx, [rbp-16]
+        mov     rax, [rbp+24]
+        cmp     rcx, rax        ; rax = len(text)
+        jge     .exit
+
+        ; -----------
+        push    rcx
+        ; second loop
+        .loop_freq_arr:
+            mov     rcx, [rbp-24]
+            mov     rax, [rbp+24]
+            cmp     rcx, rax        ; rax = len(text)
+            jge     .exit_loop_freq_arr_not_found
+
+            ; -----------
+            ; push    rcx
+            ; if current item in freq_arr == current item in text
+            
+            ; get item index' address in freq_arr
+            mov     rax, [rbp-8]
+            lea     rdx, [rcx*8]
+            lea     rdx, [rdx*2]            
+            lea     rdi, [rax+rdx]          ; *freq_arr[j]
+            mov     rdi, [rdi]
+            
+            ; get item index' address in text
+            mov     rbx, [rbp+16]
+            mov     rdx, [rbp-16]           ; text[i]
+            mov     sil, byte [rbx+rdx]     
+            cmp     dil, sil
+            je     .exit_loop_freq_arr_found
+            
+            ; add 1 to freq_arr[i+8]
+            ; mov     rax, [rbp-8]
+            ; lea     rdx, [rcx*8]
+            ; imul    rdx, 2
+            ; mov     rax, [rax+rdx+8]
+            
+            ; inc     rax
+            ; mov     [rax+cl*16+8], rax
+
+            ; increment counter and continue
+            inc     rcx
+            mov     [rbp-24], rcx
+            jmp     .loop_freq_arr
+
+        .exit_loop_freq_arr_found:
+            ; return value
+            mov     rax, rcx
+            
+            ; zero the j counter
+            mov     qword [rbp-24], 0
+            jmp     .continue_first_loop
+
+        .exit_loop_freq_arr_not_found:
+            ; the return value
+            mov     rax, -1    
+            ; zero the j counter
+            mov     qword [rbp-24], 0
+
+        .continue_first_loop:
+
+        pop     rcx
+        ;------------
+
+        cmp     rax, -1
+        jne    .increment_old_item_in_freq_arr
+
+        .add_new_item_to_freq_arr:
+            ; add the item to freq_arr
+            mov     rax, [rbp-8]    ; freq_arr
+            mov     rbx, [rbp-32]   ; next_empty_in_freq_arr
+            lea     rdx, [rbx*8]    
+            lea     rdx, [rdx*2]
+            lea     rdi, [rax+rdx]  ; freq_arr[next_empty_in_freq_arr]
+
+            ; get item index' address in text
+            mov     rbx, [rbp+16]
+            mov     rsi, [rbx+rcx]    ; load the address no the content
+
+            mov     byte [rdi], sil         ; just one byte at a time
+
+            ; and now add 1 to the freq_arr[i+8]
+            lea     rdi, [rax+rdx+8]  ; freq_arr[i][8:]
+            inc     qword [rdi]
+
+            ; increment next_empty_in_freq_arr
+            inc     qword [rbp-32]
+
+            ; increment counter
+            inc     rcx
+            mov     [rbp-16], rcx
+            jmp     .loop_text
+
+
+        .increment_old_item_in_freq_arr:
+            ; increment the item in freq_arr
+            mov     rbx, [rbp-8]    ; freq_arr
+            lea     rdx, [rax*8]    
+            lea     rdx, [rdx*2]
+            lea     rdi, [rbx+rdx+8]  ; freq_arr[i][8:]
+            inc     qword [rdi]
+
+            ; increment counter
+            inc     rcx
+            mov     [rbp-16], rcx
+            jmp     .loop_text
+
+    .exit:
+        mov     rax, [rbp-16]
+        leave
+        ret
+
 main:
     push    rbp
     mov     rbp, rsp
 
-    call    load_file
-    call    load_binary_tree
+    ; call    load_file
+    ; call    load_binary_tree
 
-    push    8
-    push    rax
-    call    export_binary_tree
+    ; push    8
+    ; push    rax
+    ; call    export_binary_tree
     
-    push    rax
-    call write_file 
+    ; push    rax
+    ; call write_file
+
+    push    19
+    push    text
+    call    calculate_frequency 
 
     mov     rdi, rax
     leave
