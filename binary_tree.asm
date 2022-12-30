@@ -1,5 +1,5 @@
 ; load the external glibc functions
-extern exit, malloc, free, fopen, fclose, fread, fwrite, memset
+extern exit, malloc, free, fopen, fclose, fread, fwrite, memset, calloc, puts, memcpy, memmove
 
 section .bss
 buffer resb 1024
@@ -11,6 +11,7 @@ output: db "out.bin", 0
 read_mode: db "r", 0
 write_mode: db "w", 0
 len_buffer: dq 64
+pop_error: db "Error: array is empty", 0
 
 section .text
 
@@ -608,9 +609,174 @@ calculate_frequency:
             jmp     .loop_text
 
     .exit:
-        mov     rax, [rbp-16]
+        mov     rax, [rbp-8]
         leave
         ret
+
+pop_first:
+    push rbp
+    mov rbp, rsp
+
+    ; save registers
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+
+    ; check if the array is empty
+    mov rax, [rbp+16] ; array
+    mov rdx, [rbp+24] ; array size
+
+    ; allocate memory for the new array
+    mov rdi, rdx        ; size of new array
+    dec rdi
+    mov rsi, 8          ; element size
+    call calloc
+    mov r8, rax         ; save address of new array
+
+    ; copy elements from original array to new array
+    mov rsi, [rbp+16] ; source
+    add rsi, 8        ; skip first element
+    mov rdi, r8       ; destination
+    mov rcx, rdx      ; size
+    dec rcx           ; -1 because we skipped the first element
+    rep movsq         ; copy elements
+
+    jmp exit
+
+exit:
+    ; return new array
+    mov rax, r8
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbx
+
+    leave
+    ret
+
+insert_value:
+    push rbp
+    mov rbp, rsp
+    sub rsp, 32
+
+    ; save registers
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+
+    ; check if index is within bounds of array
+    mov r12, [rbp + 24] ; index
+    mov r13, [rbp + 32] ; array
+    mov r14, [rbp + 40] ; array size
+    cmp r12, r14
+    jae .index_out_of_bounds
+
+    ; allocate memory for new array
+    mov rdi, r14 ; 
+    shl rdi, 3 ; size of new array (len * element size)
+    call malloc ; allocate memory for new array
+    mov r15, rax
+
+    ; copy elements from old array up to index
+    mov rdi, r15
+    mov rsi, r13
+    mov rdx, r14
+    shl rdx, 3
+    call memcpy
+
+    ; insert value at index
+    lea rdi, [r15+r12*8] ; value
+    lea rsi, [rbp+16]
+    mov rdx, 8 ; value size
+    call memcpy
+
+    ; copy the rest of the elements
+    lea rdi, [r15+r12*8+8]  ; + 8 cause we *inserted* an 8 byte value
+    lea rsi, [r13+r12*8]    ; source array
+
+    mov rdx, r14
+    sub rdx, r12
+    shl rdx, 3              ; n of bytes
+    call memcpy
+
+
+.exit:
+    ; return pointer to new array
+    mov rax, r15
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbx
+    
+    leave
+    ret
+
+.index_out_of_bounds:
+    ; return NULL if index is out of bounds
+    mov rax, 0
+    jmp .exit
+
+convert_frequency_array_to_binary_tree:
+    push rbp
+    mov rbp, rsp
+
+    ; save registers
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
+
+    ; get size of frequency array
+    mov r12, [rbp+16] ; address of frequency array
+    mov r13, [rbp+24] ; size of frequency array
+
+    ; allocate new array
+    mov rdi, r13
+    shl rdi, 3
+    call malloc
+    mov r14, rax
+
+    mov rcx, 0
+    .loop:
+    cmp rcx, r13
+    jge .exit
+
+
+    ; convert to binary tree instead of (value, frequency) pairs
+    push rcx    
+    shr rcx, 4
+    push qword [r12+rcx+8]
+    push qword [r12+rcx]
+    call binary_tree
+    add rsp, 16
+    pop rcx
+
+    ; save to new array
+    mov [r14+rcx*8], rax
+
+    inc rcx
+
+    jmp .loop
+    
+    .exit:
+    mov rax, r14
+
+    ; pop registers
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbx
+
+    leave
+    ret
 
 main:
     push    rbp
@@ -629,6 +795,20 @@ main:
     push    19
     push    text
     call    calculate_frequency 
+
+    push    7
+    push    rax
+    call convert_frequency_array_to_binary_tree
+
+    push   7
+    push   rax
+    call    pop_first
+
+    push    6
+    push    rax
+    push    2
+    push    0x0000000000deadf0
+    call    insert_value
 
     mov     rdi, rax
     leave
